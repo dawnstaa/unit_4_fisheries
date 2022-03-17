@@ -1,0 +1,238 @@
+---
+title: "4.2: Stock Collapse"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.width=6, fig.asp = 0.618, collapse=TRUE) 
+```
+
+### Unit 4: Fisheries
+#### Lesson 2: Generalized linear models
+#### New skills: left_join(), glm(family="binomial"), predict.glm()
+
+
+***
+
+### Fisheries Data
+
+In this unit we will be using the RAM Legacy Database: 
+
+https://www.ramlegacy.org/
+
+The RAM Legacy Stock Assessment Database is a compilation of stock assessment results for commercially exploited marine populations from around the world. It is inspired by Dr. Ransom A. Myers’ original stock-recruitment database, which is no longer being updated.
+
+Go to the RAM Legacy website and click through to download the latest version of the RAM data from Zenodo. The data (rather inefficiently, if you ask me) is delivered in multiple formats simultaneously, including Microsoft Excel files and RData files. Since we are using R, I'm going to load the RData file using the `load()` function.
+
+Note: Usually when I receive Excel files, I convert them to `.csv` files and read them in with `read.csv()`, but there is also an R package to load Excel files directly into R called `readxl`. 
+
+```{r}
+load('data/RAMLDB v4.495/R Data/DBdata[asmt][v4.495].RData')
+```
+
+The RAM data is structured as a large relational database which contains many different tables of different sizes and shapes, and the tables are related to each other through a series of different ids. The database has over 50 tables and some tables have over 1 million rows. This data (and many other super valuable massive datasets just like this) is difficult to work with and maneuver at first. I'm going to show you what metadata files I used to get familiar with the database so that I could start this fisheries analysis. 
+
+From the `Database Quick Guide` document, we find out that the `biometrics` table describes all parameter types available in the `bioparams` table, and the `tsmetrics` table describes all time series types available in the `timeseries` table. A simple version of the most commonly used fisheries metrics by stock and by year is available in `timeseries_values_views`. Then if we look in the `Database Structure` document, there is a map that generally shows how the major types of tables are connected:
+
+![](doc/RAM_database_structure.png){width=50%}
+
+
+Looking deeper in the `Database Structure` document, there is a table called "Table Linkages" that lists which IDs can be used to link the different tables. For example, both the `timeseries_values_views` table and `stock` table have a common ID called `stockid`. 
+
+The other good metadata file provided is called `Database Table Fields`. This is a spreadsheet that provides explanations for the variable names that represent the broad range of fishery metrics presented in this dataset. Now that we have glanced through the metadata, we can start a fisheries analysis.
+
+### Annual total catch by stock
+
+We are going to look in the `timeseries_values_views` dataset for annual total catch for each fish stock. The `TCbest` column is the best available annual total catch data (in metric tons). The actual data is all in `timeseries`, but the `timeseries` table may have multiple stock assessments for a given year, which complicates things. We'll stick with the simplified `timeseries_values_views` table. if we join it with the `stock` dataset then we can add more information about each stock, such as `scientificname` and `region`.
+
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+```{r}
+unique(timeseries_units_views$TCbest) # All TCbest units are in metric tons
+
+# Join timeseries, tsmetrics (time series metadata) and stock tables
+fish = timeseries_values_views %>%
+  left_join(stock, by=c("stockid")) %>%
+  left_join(taxonomy, by = c("tsn", "scientificname")) %>% # could join metadata table instead
+  select(stockid, year, TCbest, tsn, scientificname, commonname, region, FisheryType, taxGroup)
+dim(timeseries_values_views)
+dim(fish)
+
+max(fish$TCbest, na.rm=T)
+# This plot has LOTS of data - make sure you remove the legend !!
+# WHAT is happening with Acadian redfish in GOM/GB ? This stock didn't dominate in the last version of the RAM database...
+ggplot() +
+  geom_line(aes(x=year, y=TCbest, color=stockid), data=fish) +
+  theme(legend.position = "none")
+ggsave('figures/total_catch_all_stocks.png', device="png", height=4, width=7, units="in")
+
+# Fishery with highest annual catch
+# fish %>% arrange(desc(TCbest)) %>% glimpse() # what had the highest catch?
+fish %>% group_by(stockid, commonname, region) %>% summarize(TCbest_max = sum(TCbest, na.rm=T)) %>% arrange(desc(TCbest_max))
+
+# Compare: 
+# https://www.ramlegacy.org/explore-the-database/regions/us-east-coast/
+# data/RAMLDB v4.495/Stock Summary Files/USEastCoastSummaryFile[asmt][v4.495].pdf
+# latest version Acadian redfish GOM/GB was multiplied by 1000 by accident??
+# let's drop it to be safe
+
+fish = fish %>%
+  filter(stockid != "ACADREDGOMGB")
+```
+
+### Cod collapse
+
+Now that we have created a nice neat data set of all of the best available time series of total catch for fisheries all around the world, we can take a more detailed look at specific stocks. Let's examine the infamous collapse of the Canadian cod stock. 
+
+Newfoundland and Labrador's historic cod fisheries attracted local and international fishing fleets for almost five centuries before the Canadian government shut the industry down indefinitely in July 1992. By then, once-plentiful fish stocks had dwindled to near extinction and officials feared they would disappear entirely if the fisheries remained open. The moratorium put about 30,000 people in the province out of work and ended a way of life that had endured for generations in many port communities. It also made evident the vulnerability of marine resources to overexploitation and that existing regulatory regimes were insufficient to protect cod stocks.
+
+Let's isolate the cod stock assessments in East Coast Canada and add them together. Then we can plot a time series of the total Canadian East Coast cod stock and try to see what the collapse looked like.
+
+```{r}
+# What regions have Atlantic cod stock assessments?
+cod_regions = fish %>% 
+  filter(scientificname == "Gadus morhua") %>%
+  distinct(region)
+cod_regions
+
+# Sum best Total Catch estimates for Cod across all Canada East Coast stock assessments       
+cod = fish %>% 
+  filter(scientificname == "Gadus morhua",
+         region == "Canada East Coast", 
+         !is.na(TCbest))
+
+# Plot Canada East Coast cod total catch time series
+ggplot(aes(x=year, y=TCbest, color=stockid), data=cod) + 
+  geom_line() +
+  labs(x= "Year", y= "Total Catch (Metric Tons)", 
+       title = "Cod Total Catch in East Canadian Coast")
+```
+
+A paper by Boris Worm et al. (2006; see the readings directory) defines a fishery stock collapse as a decline in total catch to less than 10% of the maximum historical total catch. Did the Eastern Canadian cod stock "collapse" according to this definition? We'll use the `cummax()` function which returns the maximum value in all rows of a data frame previous to a particular row, to find the historical maximum (i.e. the max catch observed prior to each year within the analysis). We can identify the year the collapse occurred and add that to our time series plot.
+
+### Examine fishery collapse across ALL stocks
+
+Now that we have explored what a stock collapse looks like with cod in Eastern Canadian waters, let's look at the whole RAM dataset and count the number of stocks that have collapsed. How do stock collapse events change through time? How do they change by geographic region?
+
+```{r}
+dat = c(1,3,6,2,3,9,-1)
+cummax(dat) # Cummax() returns the cumulative maximum value
+
+# Find all stocks that have collapsed
+# Find the historical max total catch for each year in the time series
+# cummax() in row i provides the max value in rows 0 - i
+# Define collapse as a total catch <= 10% of the historical max catch
+collapse = fish %>% 
+  filter(!is.na(TCbest)) %>%  # Remove NAs (which can't be ignored with cummax())
+  group_by(stockid, tsn, scientificname, commonname, region, FisheryType, taxGroup) %>% # effectively just groups by stockid since other variables are the same for a given stockid
+  mutate(historical_max_catch = cummax(TCbest),   
+         collapse = TCbest < 0.10 * historical_max_catch) %>%
+  summarize(ever_collapsed = any(collapse)) %>%
+  ungroup()
+
+ggplot() +
+  geom_bar(aes(x=FisheryType), data=collapse) + # counts rows (stocks) of each FisheryType in data
+  facet_wrap(~ever_collapsed) + # separates by whether stock has experienced a collapse
+  coord_flip()
+```
+
+
+### Logistic regression
+
+Logistic regression is used to model a binary dependent variable or a dependent variable that is bound between 0 and 1:
+
+![](doc/logistic_regression.jpg){width=50%}
+
+This is the logistic regression function where p(x) is our y variable, bounded between 0 and 1:
+
+![](doc/logistic_regression_function.png){width=25%}
+
+Although this equation doesn't look like a linear equation, a logistic function is a generalized linear model because the model is *linear in the predictors*, meaning that the model is fit to some linear combination of the x variables (the independent variables) and the model coefficients. That means that the equation can be re-arranged with x's all on one side of the equation looking like an ordinary linear regression model:
+
+![](doc/logistic_regression_function_link.png){width=25%}
+
+Logistic regression can be fit with the `glm()` function using the `binomial` family `glm` stands for Generalized Linear Models, and `binomial` implies that the y variable that we are predicting has 2 choices. After the model is fit, model predictions can be made with the `predict()` function just like we did with linear regressions. 
+
+Logistic regression does not require model residuals to be normally distributed or variance to be constant. AIC can be used for model comparison, i.e. to determine whether the inclusion of an additional independent variable constitutes a significantly improved model. McFadden's Pseudo-$R^2$ can be used to assess fitness, where McFadden claims that a Pseudo-$R^2$ between 0.2 and 0.4 represents an "excellent fit". 
+
+#### Which stocks have experienced a collapse?
+
+What features of a stock make it more (or less) likely to experience a collapse? Let's see if `FisheryType` from the `metadata` table is a significant explanatory variable for predicting the stock's collapse. (Note that a chi-square test would also be an appropriate way to answer this question since we are comparing a categorical y variable against a single categorical x variable, but if we use a logistic regression model we could add more complexity with multiple x variables).
+
+Since collapse is a yes/no, TRUE/FALSE, 1/0, binomial type of variable, we should use logistic regression.
+
+```{r}
+# Remove time series information and collapse data to "has this stock EVER collapsed?"
+model_data = collapse %>%
+  mutate(FisheryType = as.factor(FisheryType)) %>%
+  filter(!is.na(FisheryType))
+
+# Run a logistic regression
+model_l = glm(ever_collapsed ~ FisheryType, data = model_data, family = "binomial")
+summary(model_l)
+
+# arrange fishery type alphabetically to see that intercept represents "Flatfish" 
+model_data %>% distinct(FisheryType) %>% arrange(FisheryType)
+```
+
+The coefficients in our logistic model are all relative to our intercept, which describes the probablity that a flat fish stock will collapse. Flat fish are our reference fishery simply because they are first alphabetically. We could manually reorder the `FisheryType` factor variable if we wanted to change our reference fishery. The coefficients for forage fish, gadids, and rockfish are significant and positive, indicating that these stocks are more likely to collapse than flat fish. We have a statistically not-quite-significant coefficient for tuna and marlin, meaning these stocks are less likely to collapse than flat fish stocks. 
+
+To create the prediction plot, we use `predict.glm` and generate model predictions of a stock's probability of ever experiencing a collapse for every fishery type in the dataset. We generate predictions with `type="response"` because we want our predictions to be on the scale of the response (y) variable. That means we want predictions between 0 and 1, using this equation:
+
+![](doc/logistic_regression_function.png){width=25%}
+
+It is important to note that the default option for `predict.glm` is to generate predictions with `type="link"`, meaning that the predictions are generated on the scale of the linear predictors. In the case of a logistic regression, these predictions would be log-odds, and are calculated using this equation:
+
+![](doc/logistic_regression_function_link.png){width=25%}
+
+Since I want to plot the probability that a stock might experience a collapse for a given fishery type, I'll use `type="response"`:
+
+```{r}
+# Make predictions on the probability of a stock collapse by fishery type
+FisheryType = model_data %>% distinct(FisheryType)
+model_l_predict = predict(model_l, newdata=FisheryType, type="response", se.fit=TRUE)
+
+# Organize predictions into a tidy table
+collapse_predictions = cbind(FisheryType, model_l_predict)
+
+# Plot predictions and SE bars
+ggplot(aes(x=FisheryType, y=fit, fill=FisheryType), data=collapse_predictions) +
+  geom_bar(stat="identity", show.legend = FALSE) + # stat="count" is default (like histogram)
+  geom_errorbar(aes(ymin=fit-se.fit, ymax=fit+se.fit), width=0.2) +
+  coord_flip() +
+  ylab("Probability of stock collapse")
+  # theme(legend.position = "none") # another way to hide a legend
+
+# Calculate McFadden Pseudo-R^2: 0.2-0.4 = "Excellent fit"
+# library(pscl)
+# pscl::pR2(model_l)["McFadden"] # lousy fit
+# model_l = glm(ever_collapsed ~ region + FisheryType, data = model_data, family = "binomial") # add region
+# pscl::pR2(model_l)["McFadden"] # better fit
+```
+
+Logistic regression can be a good tool for any type of binomial analysis, including binomial categorical variables (like male/female, pass/fail, yes/no), probabilities (including demographic or state space transition probabilities), or presence / absence occurrence data. Use it. Love it.
+
+***
+
+### Exercise 2_3.1
+
+Try running the same type of logistic regression to determine whether the probability of a stock collapsing is related to the stock region. 
+
+***
+
+### More Information
+
+A good primer on logistic regression in R:
+https://afit-r.github.io/logistic_regression
+
+### Acknowledgements
+
+Logistic regression figure was pulled from Data Camp:
+https://www.datacamp.com/community/tutorials/logistic-regression-R
+
+
+
+
+
