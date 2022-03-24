@@ -112,6 +112,30 @@ summary(model_l)
 # arrange fishery type alphabetically to see that intercept represents "Flatfish" 
 model_data %>% 
   distinct(FisheryType) %>% 
-  arrange(FisheryType)
+  arrange(FisheryType) #(full length of fishery types)
 
 #tuna and marlin are less likely to collapse than flatfish
+FisheryType = model_data %>% distinct(FisheryType)
+model_l_predict = predict(model_l, newdata=FisheryType,
+                          type="response", se.fit=TRUE)
+#'predict is just a 'response' predicts in the scale of y rather than
+# as a linear combination of the x 
+
+# Organize predictions into a tidy table
+collapse_predictions = cbind(FisheryType, model_l_predict)
+
+# Plot predictions and SE bars
+ggplot(aes(x=FisheryType, y=fit, fill=FisheryType),
+       data=collapse_predictions) +
+  geom_bar(stat="identity", show.legend = FALSE) + # stat="count" is default (like histogram)
+  geom_errorbar(aes(ymin=fit-se.fit, ymax=fit+se.fit), width=0.2) +
+  coord_flip() +
+  ylab("Probability of stock collapse")
+# theme(legend.position = "none") # another way to hide a legend
+#ymin=fit-se.fit, ymax=fit+se.fit - lets error bar go down by 1sd and up by 1sd
+#coord_flip so the labels don't run into each other
+
+
+#PCA to reduce the dimensions of the variables
+
+
