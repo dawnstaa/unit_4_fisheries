@@ -47,3 +47,9 @@ ggplot(aes(x=pc, y=var), data=pca_scree) +
   geom_col()+
   geom_point()+
   geom_line()
+
+install.packages("devtools")
+install_github("vqv/ggbiplot")
+library(ggbiplot) #ggbiplot takes a pca -type data
+
+
