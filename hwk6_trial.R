@@ -204,8 +204,89 @@ ggsave('figures/timeseries_Red_snapper_tock_fishnpressure_vs_Biomass.png', devic
 
 ## Logistic regression
 
+#Find all stocks that have collapsed
+collapse = timeseries_values_views %>% 
+  filter(!is.na(TCbest)) %>%  # Remove NAs (which can't be ignored with cummax())
+  group_by(stockid) %>%
+  mutate(historical_max_catch = cummax(TCbest),
+         current_collapse = TCbest < 0.10 * historical_max_catch) %>%
+  summarize(ever_collapsed = any(current_collapse)) %>% # Has stock ever collapsed throughout time series?
+  ungroup()
+
+
+collapse1 = fish_stock %>% 
+  filter(!is.na(TCbest)) %>%  # Removing NAs 
+  group_by(stockid, tsn, scientificname, commonname, region, FisheryType, taxGroup) %>% # effectively just groups by stockid since other variables are the same for a given stockid
+  mutate(historical_max_catch = cummax(TCbest),   
+         collapse = TCbest < 0.10 * historical_max_catch) %>%
+  summarize(ever_collapsed = any(collapse)) %>%
+  ungroup()
+# head(collapse1)
+# glimpse(collapse1)
+#plotting
+ggplot() +
+  geom_bar(aes(x=FisheryType), data=collapse1) + # counts rows (stocks) of each FisheryType in data
+  facet_wrap(~ever_collapsed) + # separates by whether stock has experienced a collapse
+  coord_flip()
+
+# Removing time series information and collapsing data 
+#collapsing data to "has this stock EVER collapsed?"
+model_stock_data = collapse1 %>%
+  mutate(FisheryType = as.factor(FisheryType)) %>%
+  filter(!is.na(FisheryType))
+
+# Running a logistic regression
+glm_1 = glm(ever_collapsed ~ FisheryType, data = model_stock_data, family = "binomial")
+summary(glm_1)
+
+# arrange fishery type alphabetically for intercept visibility 
+model_stock_data %>% 
+  distinct(FisheryType) %>% 
+  arrange(FisheryType)
+
+#Since the coefficients for rockfish, gadids and forage fish are positive and significant,
+#it implies that they are more likely to collapse relative to flat fish.
+#Tuna and marlin are just about on the border with respect to the statistical 
+#significance of their negative coefficient. Thus, relative to flatfish, 
+#tuna and marlin are less likely to collapse
+
+
+#generating model predictions of a stock's probability of ever experiencing a collapse
+# for each fishery type
+
+# Make predictions on the probability of a stock collapse by fishery type
+fishery_type = model_stock_data %>% 
+  distinct(FisheryType)
+
+glm_1_predict = predict(glm_1, newdata=fishery_type, type="response", se.fit=TRUE)
+
+# Organize predictions into a tidy table
+collapse1_predictions = cbind(fishery_type, glm_1_predict)
+
+# Plot predictions and SE bars
+ggplot(aes(x=FisheryType, y=fit, fill=FisheryType), data=collapse1_predictions) +
+  geom_bar(stat="identity", show.legend = FALSE) + # stat="count" is default (like histogram)
+  geom_errorbar(aes(ymin=fit-se.fit, ymax=fit+se.fit), width=0.2) +
+  coord_flip() +
+  ylab("Probability of Stock Collapse")+
+  ggtitle("Probability of Fish Stock Collapsing")
+
+# Observations
+
+#Rockfish is most likely to collapse, followed by gadids and forage fish.
+#Tuna and marlin are next after forage fish in terms of likelihood to collapse. 
+#The error bars represent one standard error about the mean
 
 
 
 
 
+
+# theme(legend.position = "none") # another way to hide a legend
+
+# Calculate McFadden Pseudo-R^2: 0.2-0.4 = "Excellent fit"
+# library(pscl)
+# pscl::pR2(model_l)["McFadden"] # lousy fit
+# model_l = glm(ever_collapsed ~ region + FisheryType, data = model_data, family = "binomial") # add region
+# pscl::pR2(model_l)["McFadden"] # better fit
+```
