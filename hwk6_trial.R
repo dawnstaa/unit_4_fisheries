@@ -1,6 +1,11 @@
 #Amadi Real Practice 04/1/2022
 #Libraries
 library(tidyverse)
+library(ggplot2)
+install.packages("zoom")
+library(zoom)
+install.packages("ggforce")
+library(ggforce)
 
 #Loading data
 load('data/RAMLDB v4.495/R Data/DBdata[asmt][v4.495].RData')
@@ -25,7 +30,7 @@ glimpse(taxonomy)
 # getting non NAs in data
 max(fish_stock$TCbest, na.rm=TRUE)
 
-#dropping Acadian Red fish cos of how the data was input
+#dropping Acadian Red fish cos of how the data was calculated and input
 fish_stock = fish_stock %>%
   filter(stockid != "ACADREDGOMGB")
 glimpse(fish_stock)
@@ -49,8 +54,8 @@ ggsave('figures/total_catch_all_stocks.png', device="png", height=4, width=7, un
 
 
 ## American lobster (*Homarus americanus*) fishery
-#creating subdata for US lobster stock
-lobster_stock = fish_stock %>%
+#creating subdata for American lobster stock
+A_lobster_stock = fish_stock %>%
   #filter(grepl("US", region)) %>%#filtering by regions that contain "US"
   filter(grepl("American lobster", commonname), !is.na(TCbest))
 glimpse(lobster_stock)
@@ -69,9 +74,10 @@ print(paste("The regions with stock assessment data for the American lobster are
 #   ggtitle("Total Catch of American Lobster over the Years")#not including legend cos data is huge
 # ggsave('figures/total_catch_Americanlobster_stock.png', device="png", height=4, width=7, units="in") 
 
+#plotting to see trend over the years for American lobster between the two regions
 #plotting to visualise American lobster data over the years, (color=stockid)
 ggplot() +
-  geom_line(aes(x=year, y=TCbest, color=stockid), data=lobster_stock) +
+  geom_line(aes(x=year, y=TCbest, color=stockid), data=A_lobster_stock) +
   facet_wrap(~region)+
   xlab("Year") + ylab("Total Catch (metric tons)") +
   ggtitle("Total Catch of American Lobster over the Years")#not including legend cos data is huge
@@ -93,7 +99,7 @@ ggplot(lobster_stock) +
 #of population growth, increased demand for American lobster, and improved trap-pot
 #gear and vessels causing an increase in total catch of the American lobster.
 
-# USFishery with highest annual catch
+# Question 2: Most productive US Fishery (using highest annual catch)
 # fish %>% arrange(desc(TCbest)) %>% glimpse() # what had the highest catch?
 US_eastcoast_fish_stock = fish_stock %>% 
   group_by(stockid, scientificname, commonname, region) %>% 
@@ -104,4 +110,102 @@ US_eastcoast_fish_stock = fish_stock %>%
 head(US_eastcoast_fish_stock)
 tail(US_eastcoast_fish_stock)
 
-Most_prod_US_eastcoast_stock[1] = US_eastcoast_fish_stock$scientificname[1][US_eastcoast_fish_stock$TCbest_max[1]]
+#Most_prod_US_eastcoast_stock = US_eastcoast_fish_stock$scientificname[US_eastcoast_fish_stock$TCbest_max[1]]
+Most_prod_US_eastcoast_stock = c(US_eastcoast_fish_stock$scientificname[US_eastcoast_fish_stock$TCbest_max==23973000],
+                                 US_eastcoast_fish_stock$commonname[US_eastcoast_fish_stock$TCbest_max==23973000])
+#Printing output to screen in a sentence (Ans to Question2)
+print(paste(Most_prod_US_eastcoast_stock[2], "(", "*", Most_prod_US_eastcoast_stock[1],"*",")",
+            "is the most productive fishery of the US east coast."))
+
+#Q3
+#creating subdata for only US lobster stock
+US_lobster_stock = fish_stock %>%
+  filter(grepl("US", region)) %>%#filtering by regions that contain "US"
+  filter(grepl("lobster", commonname), !is.na(TCbest))
+head(US_lobster_stock)
+glimpse(US_lobster_stock)
+tail(US_lobster_stock)
+
+#plotting to visualise US lobster stock over the years, (color=stockid)
+ggplot() +
+  geom_line(aes(x=year, y=TCbest, color=stockid), data=US_lobster_stock) +
+  xlab("Year") + ylab("Total Catch (metric tons)") +
+  ggtitle("Timeseries of Total Catch of US Lobster Stocks")#not including legend cos data is huge
+ggsave('figures/total_catch_US_lobster_stocks.png', device="png", height=4, width=7, units="in") 
+#SNE - South New England, GOM - Gulf of Maine, GB - Georges Bank
+#Tthe is an overall increasing trend in the lobster stock of the Gulf of Maine
+#but an increasing trend in the South New England lobster stock that starts to dip
+#from the late 1900s through to 2007. The lobster stock in Georges Bank has an
+#almost flat trend with not sustained significant rise or fall in total catch. 
+#Right from the start of 1981, the Gulf of main has had the highest total catch for lobster
+#or the most productive lobster fishery of the three lobster fishery locations in the US.
+
+#Section 2 Red Snapper
+Red_snapper_stock = timeseries_values_views %>%
+  left_join(stock, by=c("stockid")) %>%
+  left_join(taxonomy, by = c("tsn", "scientificname")) %>%
+  select(stockid, year, TCbest, tsn, scientificname, commonname, region,
+         FisheryType, taxGroup, UdivUmsypref, BdivBmsypref) %>%
+  filter(stockid == "RSNAPSATLC")
+
+glimpse(Red_snapper_stock)
+head(Red_snapper_stock)
+
+#Plotting timeseeries of both BdivBmsypref and UdivUmsypref for Atlantic red snapper
+#plotting time series of UdivUmsypref 
+#UdivUmsypref - fishing pressure relative to estimated fishing pressure at Maximum Sustainable Yield)
+ggplot() +
+  geom_line(aes(x=year, y=UdivUmsypref, color=stockid), data=Red_snapper_stock) +
+  xlab("Year") + ylab("Fishing Pressure at MSY") +
+  ggtitle("Timeseries for Red Snapper Stock - fishing pressure")#not including legend cos data is huge
+ggsave('figures/timeseries_Red_snapper_tock_fishnpressure.png', device="png", height=4, width=7, units="in") 
+#Red snapper fishing pressure at maximum sustainable yield has a general increasing
+#trend until its peak in the early 1980s then decreases sharply in the 1900s and alternatively
+#increases and decreases between the 1900s and 2000s.
+
+
+#plotting time series of BdivBmsypref 
+#BdivBmsypref  - stock biomass relative to estimated biomass at Maximum Sustainable Yield
+ggplot() +
+  geom_line(aes(x=year, y=BdivBmsypref, color=stockid), data=Red_snapper_stock) +
+  xlab("Year") + ylab("Biomass at MSY") +
+  ggtitle("Timeseries for Red Snapper - Biomass")#not including legend cos data is huge
+ggsave('figures/timeseries_Red_snapper_tock_Biomass.png', device="png", height=4, width=7, units="in") 
+#Red snapper Bbiomass relative to estimated biomass at maximum sustainable yield was greatest at the start of of the fishery
+#, specifically before 1960 and then starts to plummet sharply from about 1955 
+#through to about 1980. It has not significantly recovered since. the sharp decrease
+#in biomass from about 1955 coincides with the the sharp increase in fishing pressure
+#that started about the same time and peaked about the same time frame as well.
+
+#Plotting UdivUmsypref vs. BdivBmsypref
+ggplot() +
+  geom_line(aes(x=BdivBmsypref, y=UdivUmsypref, color=stockid), data=Red_snapper_stock) +
+  geom_smooth()+
+  xlab("Biomass at MSY") + ylab("Fishing Pressure at MSY") +
+  ggtitle("Fishing Pressure at MSY vs. Biomass at MSY")+
+  theme_bw()
+ggsave('figures/timeseries_Red_snapper_tock_fishnpressure_vs_Biomass.png', device="png", height=4, width=7, units="in") 
+
+#zooming in 
+ggplot() +
+  geom_line(aes(x=BdivBmsypref, y=UdivUmsypref, color=stockid), data=Red_snapper_stock) +
+  ggtitle("Fishing Pressure at MSY vs. Biomass at Maximum Sustainability Yield")+
+  xlab("Biomass at MSY") + ylab("Fishing Pressure at MSY") +
+  theme_bw()+
+  scale_y_log10()+
+  facet_zoom(xlim = c(0, 0.2))
+ggsave('figures/timeseries_Red_snapper_tock_fishnpressure_vs_Biomass.png', device="png", height=4, width=7, units="in") 
+
+#High fishing pressure of red snapper at maximum sustainability yield (MSY) corresponds to
+#low red snapper biomass at maximum sustainability yield. This implies that the higher
+#the fishing pressure, the lower the biomass at maximum sustainability yield 
+#(sustained intensified fishing corresponds to low biomass of red snapper caught)
+
+
+## Logistic regression
+
+
+
+
+
+
